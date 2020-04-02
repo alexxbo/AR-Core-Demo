@@ -5,4 +5,11 @@
     <string name="ar_button">ArButton</string>
     <string name="google_privacy_policy">This application runs on <a href="https://play.google.com/store/apps/details?id=com.google.ar.core"><b>Google Play Services for AR</b></a> (ARCore), which is provided by Google LLC and governed by the <a href="https://policies.google.com/privacy"><b>Google Privacy Policy.</b></a></string>
 
+    <string name="error_camera_message">Camera not available. Try restarting the app.</string>
+    <string name="error_install_ar_core_message">Please install ARCore</string>
+    <string name="error_update_ar_core_message">Please update ARCore</string>
+    <string name="error_update_app_message">Please update this app</string>
+    <string name="error_not_supported_ar_message">This device does not support AR</string>
+    <string name="error_create_session_message">Failed to create AR session</string>
+
 </resources>

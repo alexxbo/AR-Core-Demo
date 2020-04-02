@@ -3,6 +3,7 @@ package com.aborovskoy.arcoredemo
 import android.os.Bundle
 import android.os.Handler
 import android.text.method.LinkMovementMethod
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -11,9 +12,12 @@ import com.aborovskoy.arcoredemo.common.launchPermissionSettings
 import com.aborovskoy.arcoredemo.common.requestCameraPermission
 import com.aborovskoy.arcoredemo.common.shouldShowRequestRationale
 import com.google.ar.core.ArCoreApk
+import com.google.ar.core.CameraConfig
+import com.google.ar.core.CameraConfigFilter
 import com.google.ar.core.Session
-import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException
+import com.google.ar.core.exceptions.*
 import kotlinx.android.synthetic.main.activity_main.*
+import java.util.*
 
 
 class MainActivity : AppCompatActivity() {
@@ -35,20 +39,23 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
 
-        // ARCore requires camera permission to operate.
-        if (!hasCameraPermission(this)) {
-            requestCameraPermission(this)
-            return
-        }
+        if (session == null) {
 
-        // Make sure Google Play Services for AR is installed and up to date.
-        try {
-            if (session == null) {
+            // Make sure Google Play Services for AR is installed and up to date.
+            try {
                 ArCoreApk.getInstance()?.requestInstall(this, userRequestedInstall)?.let { request ->
                     when (request) {
-                        ArCoreApk.InstallStatus.INSTALLED ->
+                        ArCoreApk.InstallStatus.INSTALLED -> {
+                            // ARCore requires camera permission to operate.
+                            if (!hasCameraPermission(this)) {
+                                requestCameraPermission(this)
+                                return
+                            }
+
                             // Success, create the AR session.
                             session = Session(this)
+                            configCamera(session!!)
+                        }
                         ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
                             // Ensures next invocation of requestInstall() will either return
                             // INSTALLED or throw an exception.
@@ -57,16 +64,23 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+            } catch (error: Exception) {
+                onError(error)
+                return
             }
-        } catch (error: UnavailableUserDeclinedInstallationException) {
-            // Display an appropriate message to the user and return gracefully.
-            Toast.makeText(this, "TODO: handle exception $error}", Toast.LENGTH_LONG).show()
+        }
+
+        // Note that order matters - see the note in onPause(), the reverse applies here.
+        try {
+            session?.resume()
+        } catch (error: CameraNotAvailableException) {
+            onError(error)
+            session = null
+            return
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int,
-                                            permissions: Array<out String>,
-                                            grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         if (!hasCameraPermission(this)) {
             Toast.makeText(this, getString(R.string.camera_permission_description), Toast.LENGTH_LONG).show()
 
@@ -93,5 +107,42 @@ class MainActivity : AppCompatActivity() {
             arButton.visibility = View.INVISIBLE
             arButton.isEnabled = false
         }
+    }
+
+    private fun configCamera(session: Session) {
+        // Create a camera config filter for the session.
+        val filter = CameraConfigFilter(session)
+
+        // Return only camera configs that target 30 fps camera capture frame rate.
+        filter.setTargetFps(EnumSet.of(CameraConfig.TargetFps.TARGET_FPS_30))
+
+        // Return only camera configs that will not use the depth sensor.
+        filter.setDepthSensorUsage(EnumSet.of(CameraConfig.DepthSensorUsage.DO_NOT_USE))
+
+        // Get list of configs that match filter settings.
+        // In this case, this list is guaranteed to contain at least one element,
+        // because both TargetFps.TARGET_FPS_30 and DepthSensorUsage.DO_NOT_USE
+        // are supported on all ARCore supported devices.
+        val cameraConfigList = session.getSupportedCameraConfigs(filter)
+
+        // Use element 0 from the list of returned camera configs. This is because
+        // it contains the camera config that best matches the specified filter
+        // settings.
+        session.cameraConfig = cameraConfigList[0]
+    }
+
+    private fun onError(error: Exception) {
+        val message = when (error) {
+            is CameraNotAvailableException -> R.string.error_camera_message
+            is UnavailableArcoreNotInstalledException -> R.string.error_install_ar_core_message
+            is UnavailableUserDeclinedInstallationException -> R.string.error_install_ar_core_message
+            is UnavailableApkTooOldException -> R.string.error_update_ar_core_message
+            is UnavailableSdkTooOldException -> R.string.error_update_app_message
+            is UnavailableDeviceNotCompatibleException -> R.string.error_not_supported_ar_message
+            else -> R.string.error_create_session_message
+        }
+
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        Log.e(MainActivity::class.java.simpleName, "Exception creating session", error)
     }
 }
